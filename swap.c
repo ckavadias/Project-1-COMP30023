@@ -1,11 +1,8 @@
 /*Project 1 COMP30023, University of Melbourne, Semester 1 2017
-Author: Constantinos Kavadias, Student ID: 664790
+Author: Constantinos Kavadias, Student ID: 664790, user_id: ckavadias
 ckavadias@unimelb.edu.au, March/April 2017*/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include "fit.c"
-#include "sys_admin.c"
+#include "header.h"
 
 
 int
@@ -14,7 +11,8 @@ main(int argc, char *argv[]){
 	queue_t process_queue;
 	int run_time = 0, new_process = 1, clock = 0;
 	
-	initialise_system(&system, &process_queue);
+	initialise_system(&system, &process_queue, argc, argv);
+	exit(EXIT_SUCCESS);
 	
 	//while loop simulates clock ticks in increments of 1
 	while(process_queue.num_inqueue >= 0){

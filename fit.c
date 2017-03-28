@@ -20,3 +20,5 @@ void first_fit(queue_t* queue, memhole_t* memhole){
 //Worst fit list add function
 void worst_fit(queue_t* queue, memhole_t* memhole){
 }
+
+//heapsort algorithm for 

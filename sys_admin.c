@@ -23,7 +23,7 @@ void debug(int number, char* message){
 //print out contents of process for debugging
 void debug_process(process_t* process){
 	if(DEBUG){
-		fprintf(stderr, "	Arrival: %d\n", process->next_arrival);
+		fprintf(stderr, "	Arrival: %d\n", process->arrival);
 		fprintf(stderr, "	id: %d\n", process->id);
 		fprintf(stderr, "	Memory: %d\n", process->memory_needed);
 		fprintf(stderr, "	Burst time: %d\n", process->burst_left);
@@ -35,28 +35,26 @@ void process_queue(queue_t* queue, FILE* openfile){
 	process_t* current = NULL, *previous = NULL;
 	
 	queue->num_inqueue = 0;
-	queue->start = malloc(sizeof(process_t));
+	queue->start = (process_t*)malloc(sizeof(process_t));
+	null_check(queue->start, 1);
 	
-	current = (process_t*)queue->start;
+	current = queue->start;
 	//scan file line by line (process by process) and record in queue 
 	while(!feof(openfile)){
 		
-		fscanf(openfile, "%d %d %d %d\n", &(current->next_arrival),
+		fscanf(openfile, "%d %d %d %d\n", &(current->arrival),
 		&(current->id), &(current->memory_needed), &(current->burst_left));
 	
 		current->next = (process_t*)malloc(sizeof(process_t));
-		current->prev = previous;
-		current->loaded = 0;
+		null_check(current->next, 1);
+		current->address = -1;
 		queue->num_inqueue++;
 		
-		previous = current;
+		queue->end = current;
 		current = current->next;
 		debug(0, "still looping");
-		debug_process(previous);
 	}
 	
-	queue->end = previous;
-	previous->next = NULL;
 	debug(queue->num_inqueue, "Number of processes: ");
 	free(current);
 	
@@ -121,4 +119,71 @@ void initialise_system(system_t* system, queue_t* queue,int argc,char* argv[]){
 	process_queue(queue, openfile);
 	fclose(openfile);
 	
+	//create memholes list, maximum number of holes is size of memory
+	system->memholes = (memhole_t*)malloc(sizeof(memhole_t)*system->max_memory);
+	null_check(system->memholes, 1);
+	system->num_holes = 1;
+	(system->memholes[0]).address = system->max_memory;
+	(system->memholes[0]).size = system->max_memory;
+	
+	
+}
+
+//check if pointer is NULL if malloc check can activate termination clause
+int null_check(void* pointer, int terminate){
+	
+	if(pointer == NULL){
+		if(terminate){
+			fprintf(stderr, "NULL pointer error");
+		}
+		return 0;
+	}
+	
+	return 1;
+}
+
+//remove given process from memory chronological listing
+void remove_mem(queue_t* queue, process_t* process){
+	process_t* current, *previous;
+	
+	current = queue->start;
+	
+	while(current){
+		
+		if(current->id == process->id){
+			if(null_check(previous, 0)){
+				previous->next_mem = current->next_mem;
+			}
+			else{
+				queue->start = current->next_mem;
+				current->next = NULL;
+				
+			}
+			if (!null_check(current->next_mem, 0)){
+				queue->end = previous;
+				previous->next = NULL;
+			}
+			break;
+		}
+		
+		previous = current;
+		current = current->next_mem;
+	}
+}
+
+//check for contiguity after a process has been removed and update size of hole
+void add_hole(process_t* process, system_t* system){
+	memhole_t* current, *holder;
+	int index;
+	
+	//add memory hole for removed process
+	
+	//bubble new entry into appropriate place in main list
+	//sort memory hole list by address number in parallel
+	//check for continguous chunks
+	//check contiguity with lower address
+	//perform appropriate deletion and redirection
+	
+	//check contiguity with higher address
+	//perform appropriate deletion and redirection
 }

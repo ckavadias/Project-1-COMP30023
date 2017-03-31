@@ -32,7 +32,7 @@ void debug_process(process_t* process){
 
 //function to create queue of process
 void process_queue(queue_t* queue, FILE* openfile){
-	process_t* current = NULL, *previous = NULL;
+	process_t* current;
 	
 	queue->num_inqueue = 0;
 	queue->start = (process_t*)malloc(sizeof(process_t));
@@ -44,10 +44,10 @@ void process_queue(queue_t* queue, FILE* openfile){
 		
 		fscanf(openfile, "%d %d %d %d\n", &(current->arrival),
 		&(current->id), &(current->memory_needed), &(current->burst_left));
-	
+		
+		current->address = -1;
 		current->next = (process_t*)malloc(sizeof(process_t));
 		null_check(current->next, 1);
-		current->address = -1;
 		queue->num_inqueue++;
 		
 		queue->end = current;
@@ -88,13 +88,13 @@ void initialise_system(system_t* system, queue_t* queue,int argc,char* argv[]){
 					
 				case 'a':
 					if(strcmp(optarg, "best")){
-							system->add_list = (*best_fit);
+							system->sort_list = (*best_fit);
 					}
 					else if(strcmp(optarg, "first")){
-							system->add_list = (*first_fit);
+							system->sort_list = (*first_fit);
 					}
 					else if(strcmp(optarg, "worst")){
-							system->add_list = (*worst_fit);
+							system->sort_list = (*worst_fit);
 					}
 					else{
 						fprintf(stderr, "No appropriate algorithm selected");
@@ -120,11 +120,12 @@ void initialise_system(system_t* system, queue_t* queue,int argc,char* argv[]){
 	fclose(openfile);
 	
 	//create memholes list, maximum number of holes is size of memory
-	system->memholes = (memhole_t*)malloc(sizeof(memhole_t)*system->max_memory);
+  system->memholes = (memhole_t**)malloc(sizeof(memhole_t*)*system->max_memory);
 	null_check(system->memholes, 1);
 	system->num_holes = 1;
-	(system->memholes[0]).address = system->max_memory;
-	(system->memholes[0]).size = system->max_memory;
+	system->clock = 0;
+	(system->memholes[0])->address = system->max_memory;
+	(system->memholes[0])->size = system->max_memory;
 	
 	
 }
@@ -143,47 +144,301 @@ int null_check(void* pointer, int terminate){
 }
 
 //remove given process from memory chronological listing
-void remove_mem(queue_t* queue, process_t* process){
+process_t* remove_mem(queue_t* queue, process_t* process){
 	process_t* current, *previous;
 	
 	current = queue->start;
+	previous = NULL;
 	
 	while(current){
 		
 		if(current->id == process->id){
+			
+			//check if start of queue
 			if(null_check(previous, 0)){
 				previous->next_mem = current->next_mem;
 			}
 			else{
 				queue->start = current->next_mem;
-				current->next = NULL;
 				
 			}
 			if (!null_check(current->next_mem, 0)){
 				queue->end = previous;
 				previous->next = NULL;
 			}
+			current->address = -1;
+			current->next_mem = NULL;
 			break;
 		}
 		
 		previous = current;
 		current = current->next_mem;
 	}
+	queue->num_inqueue--;
+	return process;
 }
 
-//check for contiguity after a process has been removed and update size of hole
-void add_hole(process_t* process, system_t* system){
-	memhole_t* current, *holder;
-	int index;
+//load a process from disk if one is there
+process_t* load(queue_t* disk, system_t* system, queue_t* memory, queue_t* rr){
+	process_t* process;
 	
-	//add memory hole for removed process
+	process = disk->start;
 	
-	//bubble new entry into appropriate place in main list
-	//sort memory hole list by address number in parallel
-	//check for continguous chunks
-	//check contiguity with lower address
-	//perform appropriate deletion and redirection
+	if(null_check(process, 0)){
+		
+		//find hole
+		find_hole(system, process, memory, disk, rr);
+		
+		//add process to memory
+		if(memory->start == NULL && memory->end == NULL){
+			memory->start = process;
+			memory->end = process;
+			process->next_mem = NULL;
+		}
+		
+		//provision for memory leak
+		else if(memory->start == NULL && memory->end != NULL){
+			fprintf(stderr, "Discontinuity in Memory queue, load");
+			exit(EXIT_FAILURE);
+		}
+		
+		//memory is not empty
+		else{
+			memory->end->next_mem = process;
+			memory->end = process;
+			process->next_mem = NULL;
+		}
+		disk->start = disk->start->next_disk;
+		process->next_disk = NULL;
+		memory->num_inqueue++;
+		
+	printf("time %d, %d loaded, numprocesses=%d, numholes=%d, memusage=%d%\n",
+		system->clock, process->id, memory->num_inqueue, system->num_holes,
+		memusage(memory, system));
+	}
 	
-	//check contiguity with higher address
-	//perform appropriate deletion and redirection
+	return process;
+}
+
+//add process loaded from disk to round robin queue
+void add_rr(queue_t* queue, process_t* process){
+	//process is void
+	if(!null_check(process, 0)){
+		return;
+	}
+	
+	//process not void
+	else{
+		//queue is empty
+		if(queue->start == NULL && queue->end == NULL){
+			queue->start = process;
+			queue->end = process;
+			process->next = NULL;
+		}
+		
+		//provision for memory leak
+		else if(queue->start == NULL && queue->end != NULL){
+			fprintf(stderr, "Discontinuity in Round Robin, add_rr");
+			exit(EXIT_FAILURE);
+		}
+		
+		//queue is not empty
+		else{
+			queue->end->next = process;
+			queue->end = process;
+			process->next = NULL;
+		}
+		
+		queue->num_inqueue++;
+	}
+}
+//find hole to place process in memory or create if necesary
+void find_hole(system_t* system, process_t* process, queue_t* memory,
+										   queue_t* disk, queue_t* round_robin){
+	process_t* removed_p = NULL, **removed;
+	int found = 0, i, address, size, num_disk = 0, priority = 0, max = 10;
+	
+	
+	removed = (process_t**)malloc(sizeof(process_t*)*max);
+	null_check(removed, 1);
+	
+	while(!found){
+		
+		for(i = 0; i < system->num_holes; i++){
+			if(process->memory_needed <= (system->memholes[i])->size){
+				
+				if(process->memory_needed < (system->memholes[i])->size){
+					
+					size = (system->memholes[i])->size - process->memory_needed;
+					address = (system->memholes[i])->address + 
+														process->memory_needed;
+					delete_hole(system->memholes, i, system->num_holes);
+					system->num_holes--;
+					add_hole(address, size, system);
+					
+				}
+				
+				else{
+					delete_hole(system->memholes, i, system->num_holes);
+					system->num_holes--;
+				}
+				
+				found = 1;
+			}
+		}
+		
+		if(found){
+			break;
+		}
+		
+		else{
+			
+			removed_p = remove_mem(memory, memory->start);
+			
+			add_hole(removed_p->address, removed_p->memory_needed, system);
+			remove_rr(round_robin, removed_p);
+		
+			removed = p_array(removed_p, removed, num_disk, &max);
+			num_disk++;
+			}
+		
+	}
+	
+	heapsort_t(removed, num_disk++, p_sort);
+	
+	for(i = 0; i < num_disk; i++){
+		add_disk(removed[i], disk);
+	}
+	
+	free(removed);
+}
+
+//add hole at location address and of size size
+void add_hole(int address, int size, system_t* system){
+	int num = system->num_holes;
+	
+	(system->memholes)[num] = (memhole_t*)malloc(sizeof(memhole_t));
+	null_check((system->memholes)[num], 1);
+	system->num_holes++;
+	
+	(system->memholes)[num]->address = address;
+	(system->memholes)[num]->size = size;
+	
+	num++;
+	heapsort_t(system->memholes, num, first_fit);
+	//check for contiguity
+	check_contiguity(system);
+	//sort list back into desired order
+	heapsort_t(system->memholes, num, system->sort_list);
+}
+
+//check for contiguous holes and combine
+void check_contiguity(system_t* system){
+	int i = 0;
+	
+	while(i < system->num_holes - 1){
+		if((system->memholes)[i]->address - (system->memholes)[i]->size ==
+			(system->memholes)[i+1]->address){
+			
+			(system->memholes)[i]->size += (system->memholes)[i+1]->size;
+			delete_hole(system->memholes, i + 1, system->num_holes);
+			system->num_holes--;
+		}
+		else{
+			i++;
+		}
+	}
+}
+
+//delete array entry in memholes
+void delete_hole(memhole_t** memholes, int index, int size){
+	int i;
+	
+	memholes[index] = NULL;
+	index++;
+	
+	for(i = index; i < size - 1; i++){
+		memholes[index - 1] = memholes[index];
+	}
+	
+	memholes[index] = NULL;
+	
+}
+
+//add a process to the end of the disk queue
+void add_disk(process_t* process, queue_t* disk){
+	
+	if(!null_check(disk->start, 0) && !null_check(disk->end, 0)){
+		disk->start = process;
+		disk->end = process;
+		process->next_disk = NULL;
+	}
+	
+	else{
+		disk->end->next_disk = process;
+		disk->end = process;
+		process->next_disk = NULL;
+	}
+}
+
+//remove given process from round robin chronological listing
+void remove_rr(queue_t* queue, process_t* process){
+	process_t* current, *previous;
+	
+	current = queue->start;
+	previous = NULL;
+	
+	while(current){
+		
+		if(current->id == process->id){
+			
+			//check if start of queue
+			if(null_check(previous, 0)){
+				previous->next = current->next;
+			}
+			else{
+				queue->start = current->next;
+				
+			}
+			if (!null_check(current->next, 0)){
+				queue->end = previous;
+				previous->next = NULL;
+			}
+			current->address = -1;
+			current->next = NULL;
+			break;
+		}
+		
+		previous = current;
+		current = current->next;
+	}
+	
+	queue->num_inqueue--;
+}
+
+//calculate memusage
+int memusage(queue_t* memory, system_t* system){
+	process_t* current = memory->start;
+	int usage = 0;
+	
+	while(current){
+		usage += current->memory_needed;
+	}
+	
+	return usage/system->max_memory;
+	
+	
+}
+
+//adds process ready to go on disk to array for sorting
+process_t** p_array(process_t* process, process_t** array, int index, int* max){
+	
+	if( index >= *max){
+		(*max)*=2;
+		array = (process_t**)realloc(array, sizeof(process_t*)*(*max));
+	}
+	
+	array[index] = process;
+	
+	return array;
 }

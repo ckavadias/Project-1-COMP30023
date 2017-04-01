@@ -11,7 +11,9 @@ and system variables during simulation*/
 #include <stdlib.h>
 
 
-#define DEBUG 1
+#define DEBUG 0
+
+FILE* debug_f;
 
 /*Struct Definitions*/
 
@@ -85,3 +87,8 @@ int memusage(queue_t* memory, system_t* system);
 int p_sort(void* process1, void* process2);
 process_t** p_array(process_t* process, process_t** array, int index, int* max);
 void remove_rr(queue_t* queue, process_t* process);
+void initialise_queue(queue_t* queue);
+void dopen(char* name, char* mode);
+void dclose(FILE* file);
+void print_holes(memhole_t** memholes, int size);
+void print_rr(queue_t* queue);

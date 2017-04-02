@@ -26,36 +26,46 @@ main(int argc, char *argv[]){
 	//while loop simulates clock ticks in increments of 1
 	while(arrivals.num_inqueue || round_robin.num_inqueue){
 		
-		//E3 eventuality
+	  //E3 eventuality (process has finished running)
 	  if(round_robin.num_inqueue && round_robin.start->burst_left == 0){
+	  	  	//debugging calls
 	  	  	debug(system.clock, "\nEventuality E3");
-	  	  	
 	  	  	print_holes(system.memholes, system.num_holes);
 	  	  	print_rr(&round_robin);
 	  	  	
 	  	  	current = round_robin.start;
+	  	  	
+	  	  	//remove current process from round robin and memory
 	  	  	remove_mem(&memory, round_robin.start);
 	  	  	add_hole(round_robin.start->address, 
 	  	  		round_robin.start->memory_needed,&system);
-	  	  	
 			remove_rr(&round_robin, round_robin.start);
+			
+			//add next process on disk to memory and round robin (if exists)
 			add_rr(&round_robin, load(&disk, &system, &memory, &round_robin));
 			debug(0, "Process added to rr");
 			free(current);
 			run_time = 0;
 		}
 		
-		//E2 eventuality
+		//E2 eventuality (quantum expired)
 		if(run_time == system.quantum){
+			//debugging calls
 			debug(system.clock, "\nEventuality E2");
 			print_holes(system.memholes, system.num_holes);
 			print_rr(&round_robin);
+			
+			//add next process on disk to mem and rr before the current process
 			current = round_robin.start;
 			add_rr(&round_robin, load(&disk, &system, &memory, &round_robin));
 		
 			//if still in memory put current at end of queue
 			if(null_check(round_robin.start, 0)){
+				
 					if(current->id == round_robin.start->id){
+						
+						//remove_rr sets address -1, need to preserve to avoid
+						//incorrect memory allocations
 						address = current->address;
 						remove_rr(&round_robin, current);
 						current->address = address;
@@ -67,8 +77,9 @@ main(int argc, char *argv[]){
 		}
 		
 		debug(0, "Entering E1");
-		//E1 eventuality
+		//E1 eventuality (new process, empty memory)
 		if(arrivals.num_inqueue && system.clock == arrivals.start->arrival){
+			//debugging calls
 			debug(system.clock, "\nEventuality E1");
 			print_holes(system.memholes, system.num_holes);
 			print_rr(&round_robin);
@@ -95,7 +106,9 @@ main(int argc, char *argv[]){
 			for(i = 0; i < num_arrived; i++){
 					add_disk(priority[i], &disk);
 			}
-				
+			free(priority);
+			
+			//add next process on disk to memory and round robin (if exists)
 			if(!memory.num_inqueue){
 			  debug(0, "Adding arrival to queue");
 			  add_rr(&round_robin, load(&disk, &system, &memory, &round_robin));
@@ -103,6 +116,7 @@ main(int argc, char *argv[]){
 			
 		}
 		
+		//avoid seg fault by ensuring queue is still full
 		if(null_check(round_robin.start, 0)){
 				round_robin.start->burst_left--;
 		}
@@ -111,7 +125,9 @@ main(int argc, char *argv[]){
 		system.clock++;
 	}
 	debug(0, "Exit clock incrementing");
-	//print end ouput line may need to lower clock value
+	
+	//need to decrement clock as loop updates for given 
+	//time stamp then incrememnts
 	
 	system.clock--;
 	printf("time %d, simulation finished.\n", system.clock);

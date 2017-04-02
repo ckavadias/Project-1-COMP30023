@@ -9,6 +9,7 @@ algorithm choosing between best, first and worst fit*/
 
 /*Function Definitions*/
 
+//Following sort functions designed to work in conjunction with heapsort
 //Best fit list sort function (ascending size)
 int best_fit(void* parent, void* child){
 	
@@ -38,6 +39,17 @@ int worst_fit(void* parent, void* child){
 	
 	return 0;
 	
+}
+
+
+//sort processes based on priority (descending)
+int p_sort(void* process1, void* process2){
+	
+	if(((process_t*)process1)->id < ((process_t*)process2)->id){
+		return 1;
+	}
+	
+	return 0;
 }
 
 //heapsort algorithm that takes a function argument to determine sort priority
@@ -108,16 +120,6 @@ void swap(void** memholes, int first, int second){
 	memholes[second] = temporary;
 	debug(0, "		__swap end");
 	return;
-}
-
-//sort processes based on priority
-int p_sort(void* process1, void* process2){
-	
-	if(((process_t*)process1)->id < ((process_t*)process2)->id){
-		return 1;
-	}
-	
-	return 0;
 }
 
 

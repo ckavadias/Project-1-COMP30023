@@ -127,7 +127,7 @@ void initialise_system(system_t* system, queue_t* queue,int argc,char* argv[]){
 	}
 	debug(0, "end parsing");
 	
-	//read in filename and initialise the process queue
+	//read in file filename and initialise the process queue
 	openfile = fopen(filename, "r");
 	process_queue(queue, openfile);
 	fclose(openfile);
@@ -138,6 +138,8 @@ void initialise_system(system_t* system, queue_t* queue,int argc,char* argv[]){
 	null_check(system->memholes, 1);
 	system->num_holes = 1;
 	system->clock = 0;
+	
+	//initial hole is size of main memory
 	(system->memholes)[0] = (memhole_t*)malloc(sizeof(memhole_t));
 	null_check((system->memholes)[0], 1);
 	(system->memholes[0])->address = system->max_memory;
@@ -183,6 +185,8 @@ process_t* remove_mem(queue_t* queue, process_t* process){
 				debug(0, "		current removed");
 				
 			}
+			
+			//check if end of queue
 			if (!null_check(current->next_mem, 0)){
 				queue->end = previous;
 				
@@ -216,6 +220,8 @@ process_t* load(queue_t* disk, system_t* system, queue_t* memory, queue_t* rr){
 		find_hole(system, process, memory, disk, rr);
 		
 		//add process to memory
+		
+		//memory is empty
 		if(!memory->num_inqueue){
 			memory->start = process;
 			memory->end = process;
@@ -235,10 +241,13 @@ process_t* load(queue_t* disk, system_t* system, queue_t* memory, queue_t* rr){
 			process->next_mem = NULL;
 		}
 		
+		//one process on disk, make empty
 		if(disk->start == disk->end){
 			disk->start = NULL;
 			disk->end = NULL;
 		}
+		
+		//move to next oldest process on disk
 		else{
 			disk->start = disk->start->next_disk;
 			process->next_disk = NULL;
@@ -305,14 +314,19 @@ void find_hole(system_t* system, process_t* process, queue_t* memory,
 	
 	while(!found){
 		
+		//holes ordered based on first, worst, best only need to loop until
+		//appropriate size found
 		for(i = 0; i < system->num_holes; i++){
 			debug(system->num_holes, "find_hole inner for loop active");
+			
+			//hole found of appropriate size
 			if(process->memory_needed <= (system->memholes[i])->size){
 				debug(0,"		hole found");
 				process->address = (system->memholes[i])->address;
 				
 				debug(process->address, "		process address: ");
 				
+				//need to resize hole as greater than process mem needed
 				if(process->memory_needed < (system->memholes[i])->size){
 					debug(0, "		hole more than needed");
 					size = (system->memholes[i])->size - process->memory_needed;
@@ -325,6 +339,7 @@ void find_hole(system_t* system, process_t* process, queue_t* memory,
 					
 				}
 				
+				//process takes entire hole
 				else{
 					delete_hole(system->memholes, i, system->num_holes);
 					system->num_holes--;
@@ -339,6 +354,9 @@ void find_hole(system_t* system, process_t* process, queue_t* memory,
 			break;
 		}
 		
+		//appropriate hole not found, remove processes from memory, create
+		//more holes, record all holes for priority sorting to avoid need
+		//for timestamps later when loading from disk
 		else{
 			debug(0, "no hole found");
 			removed_p = remove_mem(memory, memory->start);
@@ -354,6 +372,7 @@ void find_hole(system_t* system, process_t* process, queue_t* memory,
 		
 	}
 	
+	//priority sort then add to disk in order
 	if(num_disk){
 		
 		heapsort_t(removed, num_disk, p_sort);
@@ -381,9 +400,10 @@ void add_hole(int address, int size, system_t* system){
 	debug(size, "		hole size");
 	(system->memholes)[num]->size = size;
 	
+	//must be in address order to check for contiguity
 	heapsort_t(system->memholes, system->num_holes, first_fit);
 	
-	//check for contiguity
+	//check for contiguity and combine holes appropriately
 	print_holes(system->memholes, system->num_holes);
 	check_contiguity(system);
 	print_holes(system->memholes, system->num_holes);
@@ -431,17 +451,21 @@ void delete_hole(memhole_t** memholes, int index, int size){
 void add_disk(process_t* process, queue_t* disk){
 	
 	debug(0, "__add_disk start");
+	//nothing on disk, process is both start and end
 	if(!null_check(disk->start, 0) && !null_check(disk->end, 0)){
 		debug(0, "NULL disk");
 		disk->start = process;
 		disk->end = process;
+		
 		debug(0, "end/start assigned");
 		debug(process->id, "	Current process is: ");
+		
 		process->next_disk = NULL;
 		debug(0, "next_disk assigned");
 		
 	}
 	
+	//add to end of disk
 	else{
 		debug(0, "		add to end of queue");
 		disk->end->next_disk = process;
@@ -460,10 +484,13 @@ void remove_rr(queue_t* queue, process_t* process){
 	previous = NULL;
 	
 	debug(0, "__remove_rr starts");
+	
+	//find process in queue and record previous process 
 	while(current){
 		
 		if(current->id == process->id){
 			debug(current->id, "		process id ");
+			
 			//check if start of queue
 			if(null_check(previous, 0)){
 				previous->next = current->next;
@@ -472,6 +499,8 @@ void remove_rr(queue_t* queue, process_t* process){
 				queue->start = current->next;
 				
 			}
+			
+			//at end of queue
 			if (!null_check(current->next, 0)){
 				queue->end = previous;
 				if(null_check(previous, 0)){
@@ -504,6 +533,7 @@ int memusage(queue_t* memory, system_t* system){
 	
 	percentage = (int)(100*usage)/system->max_memory;
 	
+	//rounding provision
 	if((100*usage)/system->max_memory - (double)percentage > 0.00){
 		percentage++;
 	}
